@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum MovieStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ClipStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+}
+
+enum SocialPostStatus {
+  SCHEDULED
+  POSTING
+  POSTED
+  FAILED
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  name           String?
+  passwordHash   String
+  role           Role          @default(USER)
+  stripeCustomerId String?     @unique
+  subscriptions  Subscription[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  user                 User               @relation(fields: [userId], references: [id])
+  userId               String
+  stripeSubscriptionId String             @unique
+  stripePriceId        String
+  status               SubscriptionStatus
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([userId])
+}
+
+/// A source movie in the catalog. `publicDomainNotes` documents why the
+/// title may be distributed without a license (jurisdiction, registry, etc.)
+/// so the claim can be audited later.
+model Movie {
+  id                String      @id @default(cuid())
+  title             String
+  slug              String      @unique
+  description       String
+  releaseYear        Int?
+  publicDomainNotes String
+  posterStorageKey  String?
+  videoStorageKey   String
+  durationSeconds   Int
+  status            MovieStatus @default(DRAFT)
+  clips             Clip[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+/// A short clip cut from a Movie, generated for social promotion.
+model Clip {
+  id             String       @id @default(cuid())
+  movie          Movie        @relation(fields: [movieId], references: [id])
+  movieId        String
+  title          String
+  caption        String
+  startSeconds   Int
+  endSeconds     Int
+  storageKey     String?
+  status         ClipStatus   @default(PENDING)
+  errorMessage   String?
+  socialPosts    SocialPost[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([movieId])
+}
+
+/// A scheduled/published post of a Clip to a social platform.
+model SocialPost {
+  id             String            @id @default(cuid())
+  clip           Clip              @relation(fields: [clipId], references: [id])
+  clipId         String
+  platform       SocialPlatform    @default(INSTAGRAM)
+  caption        String
+  status         SocialPostStatus  @default(SCHEDULED)
+  scheduledFor   DateTime
+  postedAt       DateTime?
+  externalPostId String?
+  errorMessage   String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([clipId])
+  @@index([status, scheduledFor])
+}
