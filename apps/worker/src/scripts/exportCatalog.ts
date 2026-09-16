@@ -18,6 +18,7 @@ async function main() {
       externalPosterUrl: true,
       durationSeconds: true,
       publicDomainNotes: true,
+      attributionText: true,
       archiveIdentifier: true,
     },
   });

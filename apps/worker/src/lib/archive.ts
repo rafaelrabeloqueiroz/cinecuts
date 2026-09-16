@@ -25,6 +25,44 @@ type ArchiveFile = {
   source?: string;
 };
 
+export type LicenseTerms = {
+  label: string;
+  /** Pode ser usado num serviço pago. Licenças NonCommercial não podem. */
+  commercialOk: boolean;
+  /** Permite obras derivadas — sem isso não dá para cortar clipes. */
+  derivativesOk: boolean;
+  /** CC BY e CC BY-SA exigem crédito visível ao público. */
+  attributionRequired: boolean;
+};
+
+/**
+ * Nem toda licença declarada serve para este produto: `NonCommercial` proíbe
+ * catálogo por assinatura e `NoDerivatives` proíbe recortar clipes. Cerca de
+ * 10% do acervo licenciado do Internet Archive cai num desses casos.
+ */
+export function classifyLicense(licenseUrl: string): LicenseTerms {
+  const url = licenseUrl.toLowerCase();
+
+  if (!url) {
+    return { label: "sem licença declarada", commercialOk: false, derivativesOk: false, attributionRequired: false };
+  }
+
+  if (url.includes("publicdomain") || url.includes("/zero/")) {
+    return { label: "domínio público / CC0", commercialOk: true, derivativesOk: true, attributionRequired: false };
+  }
+
+  const nonCommercial = /\bnc\b|-nc/.test(url);
+  const noDerivatives = /\bnd\b|-nd/.test(url);
+  const shareAlike = /-sa/.test(url);
+
+  return {
+    label: shareAlike ? "CC BY-SA" : noDerivatives || nonCommercial ? "CC restritiva" : "CC BY",
+    commercialOk: !nonCommercial,
+    derivativesOk: !noDerivatives,
+    attributionRequired: true,
+  };
+}
+
 export type ArchiveItem = {
   identifier: string;
   title: string;
@@ -36,6 +74,9 @@ export type ArchiveItem = {
   licenseNote: string;
   /** Licença declarada no item ou obra antiga o bastante para ser domínio público. */
   rightsVerified: boolean;
+  license: LicenseTerms;
+  /** Crédito a exibir quando a licença exige atribuição (CC BY / BY-SA). */
+  attributionText: string | null;
 };
 
 /** `length` vem como "5460.00" ou "1:31:00" dependendo do derivativo. */
@@ -144,8 +185,19 @@ export async function resolveItem(identifier: string): Promise<ArchiveItem | nul
   const oldEnoughForPublicDomain = releaseYear !== null && releaseYear <= PUBLIC_DOMAIN_YEAR_CUTOFF;
   const rightsVerified = Boolean(licenseUrl) || oldEnoughForPublicDomain;
 
+  // Obra velha o bastante é domínio público mesmo sem licença declarada; nesse
+  // caso o rótulo da licença não manda em nada.
+  const license = oldEnoughForPublicDomain && !licenseUrl
+    ? { label: "domínio público por idade", commercialOk: true, derivativesOk: true, attributionRequired: false }
+    : classifyLicense(licenseUrl);
+
+  const creator = firstString(metadata.creator);
+  const attributionText = license.attributionRequired
+    ? [creator || firstString(metadata.title) || identifier, license.label].filter(Boolean).join(" · ")
+    : null;
+
   const rightsBasis = licenseUrl
-    ? `licença declarada: ${licenseUrl}`
+    ? `licença declarada: ${licenseUrl} (${license.label})`
     : oldEnoughForPublicDomain
       ? `publicado em ${releaseYear}, anterior ao corte de ${PUBLIC_DOMAIN_YEAR_CUTOFF} usado aqui`
       : "SEM licença declarada e sem ano que garanta domínio público";
@@ -159,6 +211,8 @@ export async function resolveItem(identifier: string): Promise<ArchiveItem | nul
     posterUrl: `${THUMBNAIL_ENDPOINT}/${encodeURIComponent(identifier)}`,
     durationSeconds: parseLength(videoFile.length),
     rightsVerified,
+    license,
+    attributionText,
     licenseNote: [
       `Internet Archive: item "${identifier}"`,
       collections ? `coleções: ${collections}` : "",

@@ -40,6 +40,14 @@ export default async function MoviePage({ params }: { params: { slug: string } }
       <h1 className="text-3xl font-bold mt-6">{movie.title}</h1>
       {movie.releaseYear && <p className="text-white/50">{movie.releaseYear}</p>}
       <p className="text-white/70 mt-4 whitespace-pre-wrap">{movie.description}</p>
+
+      {/* Licenças CC BY / BY-SA exigem crédito visível a quem assiste. */}
+      {movie.attributionText && (
+        <p className="text-white/60 text-sm mt-5 border-l-2 border-brand pl-3">
+          {movie.attributionText}
+        </p>
+      )}
+
       <p className="text-white/30 text-xs mt-6 border-t border-white/10 pt-4">
         Situação de direitos: {movie.publicDomainNotes}
       </p>

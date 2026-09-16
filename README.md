@@ -72,6 +72,29 @@ pela API de metadados (melhor derivativo mp4, duração e thumbnail) e grava os
 filmes apontando direto para a URL no Internet Archive — sem ocupar storage seu.
 `publicDomainNotes` registra o item, as coleções e a base dos direitos.
 
+### Obras recentes em Creative Commons
+
+Além dos clássicos, dá para importar itens específicos por identificador — é
+assim que entram as obras modernas licenciadas pelos próprios autores (os open
+movies da Blender, por exemplo):
+
+```bash
+npm run import:archive -- --publish --identifiers "wing_it,hero_20260106,CaminandesLlamigos"
+```
+
+**Licença declarada não é sinônimo de liberada.** Cerca de 10% do acervo
+licenciado do Internet Archive usa cláusulas que quebram este produto:
+`NonCommercial` proíbe catálogo por assinatura e `NoDerivatives` proíbe recortar
+clipes. O importador classifica a licença e recusa as duas — foi assim que
+*Agent 327* (CC BY-ND) ficou de fora. Aceitas: domínio público, CC0, CC BY e
+CC BY-SA.
+
+Quando a licença exige atribuição (CC BY / BY-SA), o crédito é gravado em
+`Movie.attributionText`, aparece na página do filme e entra automaticamente na
+legenda padrão do Instagram. Sem isso, publicar o clipe violaria a licença.
+
+### Filtros automáticos
+
 Dois filtros rodam por padrão:
 
 - **Direitos**: a busca exige licença declarada no item, e o import confere de

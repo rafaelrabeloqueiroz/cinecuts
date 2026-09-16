@@ -44,6 +44,7 @@ export default async function MovieAdminPage({ params }: { params: { id: string 
         movieId={movie.id}
         movieTitle={movie.title}
         releaseYear={movie.releaseYear}
+        attributionText={movie.attributionText}
         clips={clips}
       />
     </main>

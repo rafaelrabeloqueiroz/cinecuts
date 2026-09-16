@@ -23,11 +23,14 @@ type Clip = {
   socialPosts: SocialPost[];
 };
 
-function defaultCaption(movieTitle: string, releaseYear: number | null): string {
+function defaultCaption(movieTitle: string, releaseYear: number | null, attribution: string | null): string {
   return [
     `${movieTitle}${releaseYear ? ` (${releaseYear})` : ""}`,
     "",
     "🎬 Assista o filme completo agora — link na bio!",
+    // Sem o crédito na legenda, um clipe de obra CC BY publicado no Instagram
+    // viola a licença.
+    ...(attribution ? ["", `Crédito: ${attribution}`] : []),
     "",
     "#cinema #filmesclassicos #cinecuts",
   ].join("\n");
@@ -37,16 +40,18 @@ export default function ClipManager({
   movieId,
   movieTitle,
   releaseYear,
+  attributionText,
   clips,
 }: {
   movieId: string;
   movieTitle: string;
   releaseYear: number | null;
+  attributionText: string | null;
   clips: Clip[];
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [caption, setCaption] = useState(defaultCaption(movieTitle, releaseYear));
+  const [caption, setCaption] = useState(defaultCaption(movieTitle, releaseYear, attributionText));
   const [start, setStart] = useState("0");
   const [end, setEnd] = useState("30");
   const [loading, setLoading] = useState(false);

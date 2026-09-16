@@ -9,6 +9,8 @@ type Options = {
   allowUnverified: boolean;
   minYear: number | null;
   maxYear: number | null;
+  /** Importa itens específicos por identificador, em vez de varrer uma coleção. */
+  identifiers: string[];
 };
 
 function parseArgs(argv: string[]): Options {
@@ -22,6 +24,7 @@ function parseArgs(argv: string[]): Options {
     allowUnverified: false,
     minYear: 1930,
     maxYear: 1975,
+    identifiers: [],
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -33,6 +36,9 @@ function parseArgs(argv: string[]): Options {
     else if (arg === "--min-year") options.minYear = Number(argv[++i]);
     else if (arg === "--max-year") options.maxYear = Number(argv[++i]);
     else if (arg === "--any-year") { options.minYear = null; options.maxYear = null; }
+    else if (arg === "--identifiers") {
+      options.identifiers = (argv[++i] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    }
   }
 
   return options;
@@ -84,92 +90,104 @@ async function uniqueSlug(base: string, identifier: string): Promise<string> {
   return `${candidate}-${slugify(identifier)}`.slice(0, 100);
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  const rowsPerPage = 50;
-
-  const faixa =
-    options.minYear || options.maxYear
-      ? ` (${options.minYear ?? "?"}–${options.maxYear ?? "?"})`
-      : "";
-  console.log(
-    `Importando até ${options.limit} filmes da coleção "${options.collection}"${faixa} do Internet Archive...`
-  );
-
-  let imported = 0;
-  let skipped = 0;
-  let page = 1;
-
-  while (imported < options.limit) {
-    const { docs, numFound } = await searchCollection(options.collection, page, rowsPerPage, {
-      minYear: options.minYear,
-      maxYear: options.maxYear,
-      // Fora da faixa em que a idade por si só garante domínio público, só
-      // aceitamos item que declare licença — é o que separa o acervo legítimo
-      // dos uploads de filmes ainda protegidos.
-      requireLicense: !options.allowUnverified,
-    });
-    if (docs.length === 0) break;
-    if (page === 1) console.log(`Itens encontrados na coleção: ${numFound}`);
-
-    for (const doc of docs) {
-      if (imported >= options.limit) break;
-
-      const item = await resolveItem(doc.identifier).catch(() => null);
-      if (!item || item.durationSeconds <= 0) {
-        skipped++;
-        console.warn(`  ignorado: ${doc.identifier} (sem vídeo mp4 utilizável ou duração desconhecida)`);
-        continue;
-      }
-
-      if (!item.rightsVerified && !options.allowUnverified) {
-        skipped++;
-        console.warn(`  ignorado: ${item.title} (sem licença declarada nem ano que garanta domínio público)`);
-        continue;
-      }
-
-      const blocked = blockedReason(item.title, item.description);
-      if (blocked) {
-        skipped++;
-        console.warn(`  ignorado: ${item.title} (${blocked})`);
-        continue;
-      }
-
-      const slug = await uniqueSlug(slugify(item.title), item.identifier);
-
-      await prisma.movie.upsert({
-        where: { archiveIdentifier: item.identifier },
-        create: {
-          title: item.title,
-          slug,
-          description: item.description.slice(0, 2000),
-          releaseYear: item.releaseYear,
-          publicDomainNotes: item.licenseNote,
-          externalVideoUrl: item.videoUrl,
-          externalPosterUrl: item.posterUrl,
-          archiveIdentifier: item.identifier,
-          durationSeconds: item.durationSeconds,
-          status: options.publish ? "PUBLISHED" : "DRAFT",
-        },
-        update: {
-          title: item.title,
-          description: item.description.slice(0, 2000),
-          releaseYear: item.releaseYear,
-          publicDomainNotes: item.licenseNote,
-          externalVideoUrl: item.videoUrl,
-          externalPosterUrl: item.posterUrl,
-          durationSeconds: item.durationSeconds,
-        },
-      });
-
-      imported++;
-      console.log(`  ✓ ${item.title} (${item.releaseYear ?? "s/ano"})`);
-    }
-
-    page++;
+/** Aplica todos os filtros e grava. Retorna se o item entrou no catálogo. */
+async function importOne(identifier: string, options: Options): Promise<boolean> {
+  const item = await resolveItem(identifier).catch(() => null);
+  if (!item || item.durationSeconds <= 0) {
+    console.warn(`  ignorado: ${identifier} (sem vídeo mp4 utilizável ou duração desconhecida)`);
+    return false;
   }
 
-  console.log(`\nConcluído: ${imported} importados, ${skipped} ignorados.`);
+  if (!item.rightsVerified && !options.allowUnverified) {
+    console.warn(`  ignorado: ${item.title} (sem licença declarada nem ano que garanta domínio público)`);
+    return false;
+  }
+
+  // Uma licença declarada não basta: NonCommercial proíbe catálogo pago e
+  // NoDerivatives proíbe recortar clipes, que são o produto inteiro aqui.
+  if (!item.license.commercialOk || !item.license.derivativesOk) {
+    const veto = [
+      item.license.commercialOk ? null : "proíbe uso comercial",
+      item.license.derivativesOk ? null : "proíbe derivados (clipes)",
+    ].filter(Boolean).join(" e ");
+    console.warn(`  ignorado: ${item.title} (licença ${veto})`);
+    return false;
+  }
+
+  const blocked = blockedReason(item.title, item.description);
+  if (blocked) {
+    console.warn(`  ignorado: ${item.title} (${blocked})`);
+    return false;
+  }
+
+  const slug = await uniqueSlug(slugify(item.title), item.identifier);
+  const fields = {
+    title: item.title,
+    description: item.description.slice(0, 2000),
+    releaseYear: item.releaseYear,
+    publicDomainNotes: item.licenseNote,
+    attributionText: item.attributionText,
+    externalVideoUrl: item.videoUrl,
+    externalPosterUrl: item.posterUrl,
+    durationSeconds: item.durationSeconds,
+  };
+
+  await prisma.movie.upsert({
+    where: { archiveIdentifier: item.identifier },
+    create: {
+      ...fields,
+      slug,
+      archiveIdentifier: item.identifier,
+      status: options.publish ? "PUBLISHED" : "DRAFT",
+    },
+    update: fields,
+  });
+
+  console.log(`  ✓ ${item.title} (${item.releaseYear ?? "s/ano"})${item.attributionText ? ` — crédito: ${item.attributionText}` : ""}`);
+  return true;
+}
+
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  let imported = 0;
+  let seen = 0;
+
+  if (options.identifiers.length > 0) {
+    console.log(`Importando ${options.identifiers.length} itens por identificador...`);
+    for (const identifier of options.identifiers) {
+      seen++;
+      if (await importOne(identifier, options)) imported++;
+    }
+  } else {
+    const faixa =
+      options.minYear || options.maxYear ? ` (${options.minYear ?? "?"}–${options.maxYear ?? "?"})` : "";
+    console.log(
+      `Importando até ${options.limit} filmes da coleção "${options.collection}"${faixa} do Internet Archive...`
+    );
+
+    let page = 1;
+    while (imported < options.limit) {
+      const { docs, numFound } = await searchCollection(options.collection, page, 50, {
+        minYear: options.minYear,
+        maxYear: options.maxYear,
+        // Fora da faixa em que a idade por si só garante domínio público, só
+        // aceitamos item que declare licença — é o que separa o acervo legítimo
+        // dos uploads de filmes ainda protegidos.
+        requireLicense: !options.allowUnverified,
+      });
+      if (docs.length === 0) break;
+      if (page === 1) console.log(`Itens encontrados na coleção: ${numFound}`);
+
+      for (const doc of docs) {
+        if (imported >= options.limit) break;
+        seen++;
+        if (await importOne(doc.identifier, options)) imported++;
+      }
+      page++;
+    }
+  }
+
+  console.log(`\nConcluído: ${imported} importados, ${seen - imported} ignorados.`);
   if (!options.publish) {
     console.log('Os filmes entraram como DRAFT. Publique pelo /admin ou rode de novo com "--publish".');
   }

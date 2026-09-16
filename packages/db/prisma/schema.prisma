@@ -82,6 +82,8 @@ model Movie {
   description       String
   releaseYear       Int?
   publicDomainNotes String
+  /// Crédito exibido ao público quando a licença exige atribuição (CC BY / BY-SA).
+  attributionText   String?
   posterStorageKey  String?
   videoStorageKey   String?
   /// Quando o arquivo não está no nosso storage e sim numa fonte externa
