@@ -6,19 +6,41 @@ type Options = {
   collection: string;
   limit: number;
   publish: boolean;
+  allowUnverified: boolean;
 };
 
 function parseArgs(argv: string[]): Options {
-  const options: Options = { collection: "feature_films", limit: 60, publish: false };
+  // silent_films é curada e quase toda anterior a 1930; feature_films, por
+  // contraste, é um depósito aberto que inclui uploads de filmes protegidos.
+  const options: Options = {
+    collection: "silent_films",
+    limit: 60,
+    publish: false,
+    allowUnverified: false,
+  };
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--collection") options.collection = argv[++i] ?? options.collection;
     else if (arg === "--limit") options.limit = Number(argv[++i] ?? options.limit);
     else if (arg === "--publish") options.publish = true;
+    else if (arg === "--allow-unverified") options.allowUnverified = true;
   }
 
   return options;
+}
+
+/**
+ * A coleção do Internet Archive mistura conteúdo adulto/exploitation com os
+ * clássicos, e a thumbnail é um frame arbitrário do filme. Este filtro é uma
+ * primeira barreira grosseira — revisão humana antes de publicar continua
+ * necessária, e é por isso que o import entra como DRAFT por padrão.
+ */
+const ADULT_CONTENT_PATTERN =
+  /\b(orgy|orgia|nude|nudist|naked|erotic|er[óo]tic|sex|xxx|porn|adult film|burlesque queen|strip)/i;
+
+function looksAdult(title: string, description: string): boolean {
+  return ADULT_CONTENT_PATTERN.test(title) || ADULT_CONTENT_PATTERN.test(description);
 }
 
 function slugify(value: string): string {
@@ -62,6 +84,18 @@ async function main() {
       if (!item || item.durationSeconds <= 0) {
         skipped++;
         console.warn(`  ignorado: ${doc.identifier} (sem vídeo mp4 utilizável ou duração desconhecida)`);
+        continue;
+      }
+
+      if (!item.rightsVerified && !options.allowUnverified) {
+        skipped++;
+        console.warn(`  ignorado: ${item.title} (sem licença declarada nem ano que garanta domínio público)`);
+        continue;
+      }
+
+      if (looksAdult(item.title, item.description)) {
+        skipped++;
+        console.warn(`  ignorado: ${item.title} (possível conteúdo adulto — revise manualmente)`);
         continue;
       }
 

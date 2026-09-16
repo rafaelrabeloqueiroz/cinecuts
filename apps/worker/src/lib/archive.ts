@@ -1,3 +1,10 @@
+/**
+ * Obras publicadas há mais de 95 anos são domínio público nos EUA. Serve como
+ * piso conservador quando o item não declara licença; não substitui checagem
+ * na jurisdição de destino.
+ */
+export const PUBLIC_DOMAIN_YEAR_CUTOFF = new Date().getFullYear() - 96;
+
 const SEARCH_ENDPOINT = "https://archive.org/advancedsearch.php";
 const METADATA_ENDPOINT = "https://archive.org/metadata";
 const DOWNLOAD_ENDPOINT = "https://archive.org/download";
@@ -27,6 +34,8 @@ export type ArchiveItem = {
   posterUrl: string;
   durationSeconds: number;
   licenseNote: string;
+  /** Licença declarada no item ou obra antiga o bastante para ser domínio público. */
+  rightsVerified: boolean;
 };
 
 /** `length` vem como "5460.00" ou "1:31:00" dependendo do derivativo. */
@@ -75,6 +84,8 @@ export async function searchCollection(
   url.searchParams.set("rows", String(rows));
   url.searchParams.set("page", String(page));
   url.searchParams.set("output", "json");
+  // Mais baixados primeiro: traz os títulos conhecidos antes dos uploads obscuros.
+  url.searchParams.append("sort[]", "downloads desc");
   for (const field of ["identifier", "title", "year", "description"]) {
     url.searchParams.append("fl[]", field);
   }
@@ -112,19 +123,30 @@ export async function resolveItem(identifier: string): Promise<ArchiveItem | nul
     ? metadata.collection.join(", ")
     : firstString(metadata.collection);
 
+  const releaseYear = Number.isInteger(year) && year > 1800 ? year : null;
+  const oldEnoughForPublicDomain = releaseYear !== null && releaseYear <= PUBLIC_DOMAIN_YEAR_CUTOFF;
+  const rightsVerified = Boolean(licenseUrl) || oldEnoughForPublicDomain;
+
+  const rightsBasis = licenseUrl
+    ? `licença declarada: ${licenseUrl}`
+    : oldEnoughForPublicDomain
+      ? `publicado em ${releaseYear}, anterior ao corte de ${PUBLIC_DOMAIN_YEAR_CUTOFF} usado aqui`
+      : "SEM licença declarada e sem ano que garanta domínio público";
+
   return {
     identifier,
     title: firstString(metadata.title) || identifier,
     description: stripHtml(firstString(metadata.description)) || "Sem descrição disponível.",
-    releaseYear: Number.isInteger(year) && year > 1800 ? year : null,
+    releaseYear,
     videoUrl: `${DOWNLOAD_ENDPOINT}/${encodeURIComponent(identifier)}/${encodeURIComponent(videoFile.name)}`,
     posterUrl: `${THUMBNAIL_ENDPOINT}/${encodeURIComponent(identifier)}`,
     durationSeconds: parseLength(videoFile.length),
+    rightsVerified,
     licenseNote: [
       `Internet Archive: item "${identifier}"`,
       collections ? `coleções: ${collections}` : "",
-      licenseUrl ? `licença declarada: ${licenseUrl}` : "sem licença explícita declarada no item",
-      "Confirme a situação de direitos na sua jurisdição antes de publicar.",
+      rightsBasis,
+      "Situação de direitos varia por país — confirme na sua jurisdição antes de publicar.",
     ]
       .filter(Boolean)
       .join(" · "),

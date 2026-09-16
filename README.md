@@ -52,21 +52,41 @@ está no lugar — só passa a ser usado quando as credenciais existem.
 ## Trazendo os filmes reais (Internet Archive)
 
 O seed de demonstração usa metadados reais mas **vídeos gerados localmente**.
-Para importar filmes de verdade da coleção pública do Internet Archive:
+Para importar filmes de verdade:
 
 ```bash
-npm run import:archive -- --limit 100 --publish
-# opções: --collection feature_films (padrão) | --limit N | --publish
+npm run import:archive -- --limit 60
+# opções: --collection silent_films (padrão) | --limit N | --publish | --allow-unverified
 ```
 
-O script busca na API de busca do archive.org, resolve cada item pela API de
-metadados (escolhe o melhor derivativo mp4, duração e thumbnail), e grava os
-filmes apontando direto para a URL do arquivo no Internet Archive — sem ocupar
-storage seu. Itens sem mp4 utilizável são ignorados com aviso. O campo
-`publicDomainNotes` é preenchido com o item, as coleções e a licença declarada.
+O script busca na API do archive.org ordenando por downloads, resolve cada item
+pela API de metadados (melhor derivativo mp4, duração e thumbnail) e grava os
+filmes apontando direto para a URL no Internet Archive — sem ocupar storage seu.
+`publicDomainNotes` registra o item, as coleções e a base dos direitos.
 
-Sem `--publish` os filmes entram como `DRAFT` para você revisar em `/admin`
-antes de aparecerem no catálogo.
+**Escolha da coleção importa.** O padrão é `silent_films` (curada, quase toda
+anterior a 1930, com licença declarada). Evite `feature_films`: são 28 mil itens
+de upload aberto, com cópias claramente piratas de filmes protegidos no meio.
+
+Dois filtros rodam por padrão e podem ser desligados/ajustados:
+
+- **Direitos**: só entra item com licença declarada ou publicado antes do corte
+  de 96 anos. `--allow-unverified` desliga (não recomendado).
+- **Conteúdo adulto**: descarta títulos/descrições com marcadores óbvios. É uma
+  barreira grosseira — a thumbnail do Archive é um frame arbitrário do filme, e
+  o acervo mudo inclui material erótico e exploitation.
+
+Por isso o import entra como `DRAFT` a menos que você passe `--publish`:
+**revise em `/admin` antes de publicar**. Numa importação real de 40 títulos da
+`silent_films` foi preciso arquivar manualmente três: *The Birth of a Nation*
+(propaganda da KKK), *The Roman Orgy* e um curta de 1906 sem descrição com nudez
+na thumbnail.
+
+Para exportar o catálogo publicado como JSON (backup ou protótipo):
+
+```bash
+npx tsx apps/worker/src/scripts/exportCatalog.ts catalogo.json
+```
 
 ## Arquitetura
 
