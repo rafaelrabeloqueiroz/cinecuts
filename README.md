@@ -56,31 +56,39 @@ Para importar filmes de verdade:
 
 ```bash
 npm run import:archive -- --limit 60
-# opções: --collection silent_films (padrão) | --limit N | --publish | --allow-unverified
+# opções: --collection feature_films (padrão) | --limit N | --publish
+#         --min-year 1930 --max-year 1975 (padrão) | --any-year | --allow-unverified
 ```
+
+**O teto é 1975, e isso não é escolha de curadoria.** Domínio público nos EUA
+cobre obras com mais de 95 anos e os filmes de 1930–1963 cujo copyright não foi
+renovado — é daí que vêm *His Girl Friday*, *Detour*, *McLintock!*, *Carnival of
+Souls*. Nada posterior a isso é livre: catálogo recente exige contrato de
+licenciamento com o detentor dos direitos. Use `--any-year` só para acervo mudo
+(pré-1930), onde a idade por si só resolve.
 
 O script busca na API do archive.org ordenando por downloads, resolve cada item
 pela API de metadados (melhor derivativo mp4, duração e thumbnail) e grava os
 filmes apontando direto para a URL no Internet Archive — sem ocupar storage seu.
 `publicDomainNotes` registra o item, as coleções e a base dos direitos.
 
-**Escolha da coleção importa.** O padrão é `silent_films` (curada, quase toda
-anterior a 1930, com licença declarada). Evite `feature_films`: são 28 mil itens
-de upload aberto, com cópias claramente piratas de filmes protegidos no meio.
+Dois filtros rodam por padrão:
 
-Dois filtros rodam por padrão e podem ser desligados/ajustados:
+- **Direitos**: a busca exige licença declarada no item, e o import confere de
+  novo aceitando licença declarada *ou* ano anterior ao corte de 96 anos. É o
+  que separa o acervo legítimo dos uploads de filmes ainda protegidos —
+  `feature_films` sem filtro tem 28 mil itens e cópias claramente piratas no
+  meio (`--allow-unverified` desliga; não recomendado).
+- **Conteúdo**: descarta material sexual/exploitation, registro real de
+  atrocidade e propaganda racista. Cada padrão veio de um item que apareceu de
+  verdade numa importação.
 
-- **Direitos**: só entra item com licença declarada ou publicado antes do corte
-  de 96 anos. `--allow-unverified` desliga (não recomendado).
-- **Conteúdo adulto**: descarta títulos/descrições com marcadores óbvios. É uma
-  barreira grosseira — a thumbnail do Archive é um frame arbitrário do filme, e
-  o acervo mudo inclui material erótico e exploitation.
-
-Por isso o import entra como `DRAFT` a menos que você passe `--publish`:
-**revise em `/admin` antes de publicar**. Numa importação real de 40 títulos da
-`silent_films` foi preciso arquivar manualmente três: *The Birth of a Nation*
-(propaganda da KKK), *The Roman Orgy* e um curta de 1906 sem descrição com nudez
-na thumbnail.
+Mesmo assim o import entra como `DRAFT` sem `--publish`: **revise em `/admin`
+antes de publicar**. Os filtros bloquearam sozinhos *Child Bride*, *Nazi
+Concentration Camps*, *Diary of a Nudist* e *Teaserama*; ainda foi preciso
+arquivar à mão *Bloody Pit of Horror* e *Grave of the Vampire*, cujas sinopses
+só revelam o problema na leitura. Numa rodada anterior no acervo mudo, *The
+Birth of a Nation* (propaganda da KKK) também precisou de decisão humana.
 
 Para exportar o catálogo publicado como JSON (backup ou protótipo):
 

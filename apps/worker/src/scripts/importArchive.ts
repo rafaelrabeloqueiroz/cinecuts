@@ -7,16 +7,21 @@ type Options = {
   limit: number;
   publish: boolean;
   allowUnverified: boolean;
+  minYear: number | null;
+  maxYear: number | null;
 };
 
 function parseArgs(argv: string[]): Options {
-  // silent_films é curada e quase toda anterior a 1930; feature_films, por
-  // contraste, é um depósito aberto que inclui uploads de filmes protegidos.
+  // Recorte padrão: era de ouro de Hollywood cujo copyright não foi renovado.
+  // São os títulos mais "assistíveis" que ainda são livres — com som, estrelas
+  // conhecidas e, às vezes, cor. Nada posterior a isso é domínio público.
   const options: Options = {
-    collection: "silent_films",
+    collection: "feature_films",
     limit: 60,
     publish: false,
     allowUnverified: false,
+    minYear: 1930,
+    maxYear: 1975,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -25,22 +30,41 @@ function parseArgs(argv: string[]): Options {
     else if (arg === "--limit") options.limit = Number(argv[++i] ?? options.limit);
     else if (arg === "--publish") options.publish = true;
     else if (arg === "--allow-unverified") options.allowUnverified = true;
+    else if (arg === "--min-year") options.minYear = Number(argv[++i]);
+    else if (arg === "--max-year") options.maxYear = Number(argv[++i]);
+    else if (arg === "--any-year") { options.minYear = null; options.maxYear = null; }
   }
 
   return options;
 }
 
 /**
- * A coleção do Internet Archive mistura conteúdo adulto/exploitation com os
- * clássicos, e a thumbnail é um frame arbitrário do filme. Este filtro é uma
- * primeira barreira grosseira — revisão humana antes de publicar continua
- * necessária, e é por isso que o import entra como DRAFT por padrão.
+ * O acervo mistura clássicos com exploitation, pornografia de época e registros
+ * reais de atrocidade — e a thumbnail do Archive é um frame arbitrário do filme.
+ * Cada padrão abaixo veio de um item que realmente apareceu numa importação.
+ * É uma primeira barreira: revisão humana antes de publicar continua sendo
+ * obrigatória, e é por isso que o import entra como DRAFT por padrão.
  */
-const ADULT_CONTENT_PATTERN =
-  /\b(orgy|orgia|nude|nudist|naked|erotic|er[óo]tic|sex|xxx|porn|adult film|burlesque queen|strip)/i;
+const CONTENT_BLOCKLIST: Array<{ reason: string; pattern: RegExp }> = [
+  {
+    reason: "conteúdo sexual/exploitation",
+    pattern:
+      /\b(orgy|orgia|nude|nudist|naked|erotic|er[óo]tic|sex|xxx|porn|adult film|burlesque|striptease|teaserama|child bride|vice racket)/i,
+  },
+  {
+    reason: "registro real de atrocidade",
+    pattern: /\b(concentration camp|holocaust|atrocities|mass grave|execution footage)/i,
+  },
+  {
+    reason: "propaganda racista",
+    pattern: /\b(birth of a nation|ku klux|klansman)/i,
+  },
+];
 
-function looksAdult(title: string, description: string): boolean {
-  return ADULT_CONTENT_PATTERN.test(title) || ADULT_CONTENT_PATTERN.test(description);
+function blockedReason(title: string, description: string): string | null {
+  const haystack = `${title} ${description}`;
+  const hit = CONTENT_BLOCKLIST.find((rule) => rule.pattern.test(haystack));
+  return hit ? hit.reason : null;
 }
 
 function slugify(value: string): string {
@@ -64,8 +88,12 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const rowsPerPage = 50;
 
+  const faixa =
+    options.minYear || options.maxYear
+      ? ` (${options.minYear ?? "?"}–${options.maxYear ?? "?"})`
+      : "";
   console.log(
-    `Importando até ${options.limit} filmes da coleção "${options.collection}" do Internet Archive...`
+    `Importando até ${options.limit} filmes da coleção "${options.collection}"${faixa} do Internet Archive...`
   );
 
   let imported = 0;
@@ -73,7 +101,14 @@ async function main() {
   let page = 1;
 
   while (imported < options.limit) {
-    const { docs, numFound } = await searchCollection(options.collection, page, rowsPerPage);
+    const { docs, numFound } = await searchCollection(options.collection, page, rowsPerPage, {
+      minYear: options.minYear,
+      maxYear: options.maxYear,
+      // Fora da faixa em que a idade por si só garante domínio público, só
+      // aceitamos item que declare licença — é o que separa o acervo legítimo
+      // dos uploads de filmes ainda protegidos.
+      requireLicense: !options.allowUnverified,
+    });
     if (docs.length === 0) break;
     if (page === 1) console.log(`Itens encontrados na coleção: ${numFound}`);
 
@@ -93,9 +128,10 @@ async function main() {
         continue;
       }
 
-      if (looksAdult(item.title, item.description)) {
+      const blocked = blockedReason(item.title, item.description);
+      if (blocked) {
         skipped++;
-        console.warn(`  ignorado: ${item.title} (possível conteúdo adulto — revise manualmente)`);
+        console.warn(`  ignorado: ${item.title} (${blocked})`);
         continue;
       }
 

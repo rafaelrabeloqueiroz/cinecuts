@@ -74,13 +74,30 @@ function pickVideoFile(files: ArchiveFile[]): ArchiveFile | null {
   return pool.reduce((best, file) => (Number(file.size ?? 0) > Number(best.size ?? 0) ? file : best));
 }
 
+export type SearchFilters = {
+  minYear?: number | null;
+  maxYear?: number | null;
+  /** Exige licença declarada no item — essencial fora da faixa de domínio público por idade. */
+  requireLicense?: boolean;
+};
+
 export async function searchCollection(
   collection: string,
   page: number,
-  rows: number
+  rows: number,
+  filters: SearchFilters = {}
 ): Promise<{ docs: ArchiveSearchDoc[]; numFound: number }> {
+  const clauses = [`collection:(${collection})`, "mediatype:(movies)"];
+
+  if (filters.minYear || filters.maxYear) {
+    clauses.push(`year:[${filters.minYear ?? 1800} TO ${filters.maxYear ?? 2100}]`);
+  }
+  if (filters.requireLicense) {
+    clauses.push("licenseurl:[* TO *]");
+  }
+
   const url = new URL(SEARCH_ENDPOINT);
-  url.searchParams.set("q", `collection:(${collection}) AND mediatype:(movies)`);
+  url.searchParams.set("q", clauses.join(" AND "));
   url.searchParams.set("rows", String(rows));
   url.searchParams.set("page", String(page));
   url.searchParams.set("output", "json");
