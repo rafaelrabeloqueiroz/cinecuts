@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { storage } from "@cinecuts/storage";
 import { requireAdminSession } from "@/lib/admin";
-import { createUploadUrl } from "@/lib/storage";
 
 const schema = z.object({
   kind: z.enum(["movie", "poster"]),
-  slug: z.string().min(1),
+  slug: z.string().min(1).regex(/^[a-z0-9-]+$/),
   contentType: z.string().min(1),
-  extension: z.string().min(1).max(10),
+  extension: z.string().min(1).max(10).regex(/^[A-Za-z0-9]+$/),
 });
 
 export async function POST(req: Request) {
@@ -20,6 +20,6 @@ export async function POST(req: Request) {
   const { kind, slug, contentType, extension } = parsed.data;
   const storageKey = kind === "movie" ? `movies/${slug}/source.${extension}` : `movies/${slug}/poster.${extension}`;
 
-  const uploadUrl = await createUploadUrl(storageKey, contentType);
+  const uploadUrl = await storage.createUploadUrl(storageKey, contentType);
   return NextResponse.json({ uploadUrl, storageKey });
 }

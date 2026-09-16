@@ -1,8 +1,11 @@
 import { redirect, notFound } from "next/navigation";
+import { storage } from "@cinecuts/storage";
 import { requireAdminSession } from "@/lib/admin";
 import { prisma } from "@cinecuts/db";
 import ClipManager from "./clip-manager";
 import PublishToggle from "./publish-toggle";
+
+export const dynamic = "force-dynamic";
 
 export default async function MovieAdminPage({ params }: { params: { id: string } }) {
   const session = await requireAdminSession();
@@ -13,6 +16,17 @@ export default async function MovieAdminPage({ params }: { params: { id: string 
     include: { clips: { include: { socialPosts: true }, orderBy: { createdAt: "desc" } } },
   });
   if (!movie) notFound();
+
+  const clips = await Promise.all(
+    movie.clips.map(async (clip) => ({
+      ...clip,
+      previewUrl: clip.storageKey ? await storage.getPlaybackUrl(clip.storageKey) : null,
+      socialPosts: clip.socialPosts.map((post) => ({
+        ...post,
+        scheduledFor: post.scheduledFor.toISOString(),
+      })),
+    }))
+  );
 
   return (
     <main className="min-h-screen px-6 py-10 max-w-4xl mx-auto">
@@ -29,10 +43,8 @@ export default async function MovieAdminPage({ params }: { params: { id: string 
       <ClipManager
         movieId={movie.id}
         movieTitle={movie.title}
-        clips={movie.clips.map((c) => ({
-          ...c,
-          socialPosts: c.socialPosts.map((p) => ({ ...p, scheduledFor: p.scheduledFor.toISOString() })),
-        }))}
+        releaseYear={movie.releaseYear}
+        clips={clips}
       />
     </main>
   );

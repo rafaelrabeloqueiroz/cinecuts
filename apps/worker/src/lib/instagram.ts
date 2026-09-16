@@ -7,6 +7,10 @@ function requireEnv(name: string): string {
   return value;
 }
 
+export function isInstagramConfigured(): boolean {
+  return Boolean(process.env.IG_BUSINESS_ACCOUNT_ID && process.env.IG_LONG_LIVED_ACCESS_TOKEN);
+}
+
 type GraphError = { error?: { message?: string } };
 
 async function graphFetch<T>(path: string, params: Record<string, string>, method: "GET" | "POST" = "GET"): Promise<T> {
@@ -62,14 +66,4 @@ export async function publishContainer(containerId: string): Promise<string> {
     "POST"
   );
   return result.id;
-}
-
-export function buildCaption(movieTitle: string, clipCaption: string): string {
-  return [
-    clipCaption,
-    "",
-    `🎬 Assista "${movieTitle}" completo agora — link na bio!`,
-    "",
-    "#cinecuts #filmes #cinema #streaming",
-  ].join("\n");
 }

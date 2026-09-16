@@ -5,104 +5,128 @@ domínio público / com licença livre de distribuição**, com um pipeline
 automatizado para gerar clipes curtos e publicá-los no Instagram como
 divulgação ("assista o filme completo — link na bio") para vender assinaturas.
 
-> ⚠️ **Sobre o conteúdo do catálogo**: cada filme cadastrado guarda um campo
+> ⚠️ **Sobre o conteúdo do catálogo**: cada filme guarda um campo
 > `publicDomainNotes` (obrigatório) documentando a fonte/jurisdição que
 > comprova que ele pode ser distribuído livremente. Status de domínio público
-> varia por país — valide caso a caso antes de publicar. A plataforma não
-> foi desenhada para hospedar ou redistribuir conteúdo protegido por
-> direitos autorais sem licença.
+> varia por país e **não existe lista oficial** — valide título a título antes
+> de publicar. Um filme estar hospedado no Internet Archive é um bom indício,
+> não uma garantia jurídica.
+
+## Rodando em 5 minutos (modo demo, sem cartão nem Meta)
+
+```bash
+cp .env.example .env            # os padrões já funcionam para desenvolvimento
+docker compose up -d            # Postgres + Redis
+
+npm install
+npm run db:migrate              # cria as tabelas
+npm run db:seed                 # cria o admin (ADMIN_EMAIL/ADMIN_PASSWORD do .env)
+npm run seed:demo               # popula 12 clássicos com vídeos de amostra
+
+npm run dev:web                 # http://localhost:3000
+npm run dev:worker              # em outro terminal: filas de clipe e postagem
+```
+
+Depois: crie uma conta em `/registrar`, clique em **"Ativar assinatura de teste"**
+(modo demo, não cobra nada) e o catálogo libera. O painel fica em `/admin` com
+o login do seed.
+
+Requisitos: Node 20+, `ffmpeg` no PATH (o worker usa para cortar os clipes),
+Postgres e Redis (via docker compose ou instâncias próprias).
+
+### O que é real e o que é casca
+
+| Recurso | Sem configurar | Depois de configurar |
+| --- | --- | --- |
+| Cadastro, login, paywall | real | real |
+| Catálogo, player, streaming com seek | real | real |
+| Geração de clipes (ffmpeg) | real | real |
+| Pagamento | botão "Assinar com cartão" responde "não configurado"; o botão de demo libera 30 dias | Stripe Checkout + webhook de verdade |
+| Postagem no Instagram | simulada (loga a legenda e marca como POSTED) | publicação real via Graph API |
+| Storage | disco local em `./storage`, servido por `/api/media` | bucket S3/R2 com URL pré-assinada |
+
+Para sair do modo demo: preencha as chaves no `.env` e defina `DEMO_MODE=false`
+(isso remove o botão de assinatura de teste). O código das integrações reais já
+está no lugar — só passa a ser usado quando as credenciais existem.
+
+## Trazendo os filmes reais (Internet Archive)
+
+O seed de demonstração usa metadados reais mas **vídeos gerados localmente**.
+Para importar filmes de verdade da coleção pública do Internet Archive:
+
+```bash
+npm run import:archive -- --limit 100 --publish
+# opções: --collection feature_films (padrão) | --limit N | --publish
+```
+
+O script busca na API de busca do archive.org, resolve cada item pela API de
+metadados (escolhe o melhor derivativo mp4, duração e thumbnail), e grava os
+filmes apontando direto para a URL do arquivo no Internet Archive — sem ocupar
+storage seu. Itens sem mp4 utilizável são ignorados com aviso. O campo
+`publicDomainNotes` é preenchido com o item, as coleções e a licença declarada.
+
+Sem `--publish` os filmes entram como `DRAFT` para você revisar em `/admin`
+antes de aparecerem no catálogo.
 
 ## Arquitetura
 
-Monorepo com npm workspaces:
-
 ```
 apps/
-  web/      Next.js 14 (App Router) — site, autenticação, assinatura (Stripe),
-            catálogo, player, painel admin
+  web/      Next.js 14 (App Router) — landing, auth, assinatura, catálogo,
+            player, painel admin e a rota /api/media
   worker/   Node.js — geração de clipes (ffmpeg) e publicação agendada no
-            Instagram (Graph API), consumindo filas BullMQ/Redis
+            Instagram, consumindo filas BullMQ/Redis
 packages/
-  db/       Schema Prisma (Postgres) compartilhado entre web e worker
+  db/       Schema Prisma (Postgres)
+  storage/  Driver de storage (local ou S3-compatible)
 ```
 
-Fluxo:
+Fluxo do produto:
 
-1. Admin sobe um filme (arquivo de vídeo + pôster) via upload assinado
-   direto para o storage S3-compatible (R2/S3).
+1. Admin importa filmes do Internet Archive (ou sobe o arquivo pelo `/admin`).
 2. Admin recorta um trecho (início/fim em segundos) e cria um `Clip`.
-3. O worker consome a fila `clip-generation`, baixa o filme, corta o trecho
-   com `ffmpeg`, sobe o resultado e marca o clipe como `READY`.
-4. Admin agenda uma publicação (`SocialPost`) daquele clipe para um horário.
-5. O scheduler do worker verifica a cada minuto os posts `SCHEDULED` vencidos
-   e enfileira a publicação na fila `social-posting`.
-6. O worker publica o clipe como Reels via Instagram Graph API, com legenda
-   contendo a chamada para assinar ("link na bio").
-7. Usuários assinam via Stripe Checkout; o webhook do Stripe mantém o status
-   da assinatura sincronizado; só assinantes com assinatura ativa acessam o
-   catálogo e o player (via URL assinada e temporária, não pública).
+3. O worker consome a fila `clip-generation` e corta o trecho com `ffmpeg`
+   (lendo direto da URL externa quando o filme não está no storage local).
+4. Admin revisa o clipe no player do painel e agenda a publicação.
+5. O scheduler verifica a cada minuto os posts vencidos e enfileira em
+   `social-posting`.
+6. O worker publica como Reels via Graph API, com a legenda e o CTA do link na bio.
+7. O visitante assina, e só assinatura ativa libera catálogo e player.
 
-## Requisitos
+## Comandos
 
-- Node.js 20+
-- Docker (para Postgres + Redis locais) ou instâncias próprias
-- `ffmpeg` disponível no ambiente onde o **worker** roda (imagem Docker de
-  produção deve instalar o pacote `ffmpeg`)
-- Conta Stripe (modo teste para desenvolvimento)
-- Bucket S3-compatible (AWS S3, Cloudflare R2, etc.) com domínio público
-  (CDN) para servir os vídeos/clipes
-- Conta Instagram Profissional (Business/Creator) vinculada a uma Página do
-  Facebook, um App no Meta for Developers com permissão
-  `instagram_content_publish`, e um token de acesso de longa duração
-
-## Setup local
-
-```bash
-cp .env.example .env       # preencha as credenciais (Stripe, storage, Meta)
-docker compose up -d       # sobe Postgres + Redis
-
-npm install
-npm run db:generate
-npm run db:migrate         # cria as tabelas
-
-# cria o primeiro usuário admin (defina ADMIN_EMAIL/ADMIN_PASSWORD no .env)
-npm run --workspace packages/db seed
-
-npm run dev:web            # http://localhost:3000
-npm run dev:worker         # processa filas de clipe/postagem
-```
-
-As variáveis de ambiente estão documentadas em `.env.example`. `web` e
-`worker` leem o mesmo `.env`/`.env.local` na raiz de cada app — copie os
-valores relevantes para `apps/web/.env.local` e `apps/worker/.env` em
-desenvolvimento, ou injete-os via seu orquestrador em produção.
-
-## Painel admin
-
-- `/admin` — lista de filmes
-- `/admin/filmes/novo` — cadastro de filme (upload de vídeo + pôster)
-- `/admin/filmes/[id]` — gera clipes (ffmpeg), acompanha status, agenda ou
-  publica imediatamente no Instagram
-
-Apenas usuários com `role = ADMIN` acessam essas rotas e APIs
-(`/api/admin/*`).
+| Comando | O que faz |
+| --- | --- |
+| `npm run dev:web` / `npm run dev:worker` | sobe app e worker em modo dev |
+| `npm run db:migrate` / `db:deploy` | migrações (dev / produção) |
+| `npm run db:seed` | cria/promove o usuário admin |
+| `npm run seed:demo` | catálogo de demonstração gerado com ffmpeg |
+| `npm run import:archive` | importa filmes reais do Internet Archive |
+| `npm run db:studio` | Prisma Studio |
+| `npm run build` | build de produção de tudo |
 
 ## Segurança / decisões relevantes
 
-- O vídeo do filme completo é servido via **URL assinada de curta duração**
-  (não uma URL pública fixa), gerada só depois de confirmar sessão +
-  assinatura ativa — evita vazamento de link reutilizável.
-- A API de otimização de imagem do Next (`/_next/image`) está desativada em
-  `next.config.mjs` (não usamos `next/image`), reduzindo superfície de
-  ataque de CVEs conhecidas do framework.
-- Senhas são hasheadas com bcrypt; sessão via JWT (NextAuth Credentials).
-- Webhooks do Stripe validam assinatura (`STRIPE_WEBHOOK_SECRET`) antes de
-  processar qualquer evento.
+- O filme completo só é servido para sessão com assinatura ativa: no storage
+  local a rota `/api/media` checa a assinatura a cada request; no S3 a URL é
+  pré-assinada e expira em 10 minutos.
+- Pôsteres e clipes são públicos de propósito (landing page e download do
+  vídeo pelo Instagram); o filme completo nunca é.
+- Chaves de storage passam por `sanitizeStorageKey`, que rejeita `..`, caminhos
+  absolutos e caracteres fora de `[A-Za-z0-9._-]` — sem isso o driver local
+  permitiria leitura/escrita fora do diretório de mídia.
+- `/api/media` implementa Range/206, então o player faz seek sem baixar o
+  arquivo inteiro.
+- Senhas com bcrypt; sessão JWT (NextAuth Credentials); webhook do Stripe
+  valida assinatura antes de processar.
+- A API de otimização de imagem do Next (`/_next/image`) está desativada — não
+  usamos `next/image` e ela concentra CVEs conhecidas na série 14.x.
 
-## Próximos passos sugeridos
+## Limitações conhecidas
 
-- Testes automatizados (unitários para lib/ e e2e para o fluxo de assinatura)
-- Observabilidade (logs estruturados, alertas de falha nas filas)
-- Rate limiting nas rotas públicas (registro/login)
-- Painel de métricas (assinantes ativos, MRR, clipes publicados, CTR do
-  link na bio)
+- O worker roda o scheduler por polling (1 min). Para volume alto, trocar por
+  jobs atrasados do próprio BullMQ.
+- Não há testes automatizados ainda.
+- Sem rate limiting em `/api/auth/register` e login.
+- O `postcss` embutido no Next 14 tem advisories abertos (só afeta build-time);
+  some ao migrar para Next 16.

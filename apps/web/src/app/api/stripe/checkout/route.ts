@@ -10,6 +10,13 @@ export async function POST() {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
+  if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_PRICE_ID_MONTHLY) {
+    return NextResponse.json(
+      { error: "Pagamento não configurado neste ambiente (defina STRIPE_SECRET_KEY e STRIPE_PRICE_ID_MONTHLY)." },
+      { status: 503 }
+    );
+  }
+
   const userId = (session.user as { id: string }).id;
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
 
@@ -29,7 +36,7 @@ export async function POST() {
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
-    line_items: [{ price: process.env.STRIPE_PRICE_ID_MONTHLY, quantity: 1 }],
+    line_items: [{ price: process.env.STRIPE_PRICE_ID_MONTHLY!, quantity: 1 }],
     success_url: `${appUrl}/catalogo?assinatura=sucesso`,
     cancel_url: `${appUrl}/assinar?assinatura=cancelada`,
     allow_promotion_codes: true,

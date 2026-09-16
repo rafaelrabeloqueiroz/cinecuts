@@ -1,6 +1,6 @@
 import ffmpeg from "fluent-ffmpeg";
 
-/** Corta [startSeconds, endSeconds) de `inputPath` e grava em `outputPath`, recodificando para um MP4 vertical-friendly (h264/aac) adequado ao Reels do Instagram. */
+/** Corta [startSeconds, endSeconds) de `inputPath` (arquivo local ou URL http) e grava em `outputPath` como MP4 h264/aac, formato aceito pelo Reels. */
 export function cutClip(inputPath: string, outputPath: string, startSeconds: number, endSeconds: number): Promise<void> {
   const duration = endSeconds - startSeconds;
   if (duration <= 0) {

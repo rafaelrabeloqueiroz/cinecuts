@@ -1,3 +1,4 @@
+import "./lib/env";
 import { startGenerateClipWorker } from "./jobs/generateClip";
 import { startPostToInstagramWorker } from "./jobs/postToInstagram";
 import { startScheduler } from "./scheduler";

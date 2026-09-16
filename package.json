@@ -9,12 +9,18 @@
   "scripts": {
     "dev:web": "npm run dev -w apps/web",
     "dev:worker": "npm run dev -w apps/worker",
-    "build": "npm run build -w packages/db && npm run build -w apps/web && npm run build -w apps/worker",
-    "db:generate": "npm run generate -w packages/db",
-    "db:migrate": "npm run migrate -w packages/db",
-    "db:studio": "npm run studio -w packages/db"
+    "build": "npm run db:generate && npm run build -w apps/web && npm run build -w apps/worker",
+    "db:generate": "prisma generate --schema packages/db/prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema packages/db/prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema packages/db/prisma/schema.prisma",
+    "db:studio": "prisma studio --schema packages/db/prisma/schema.prisma",
+    "db:seed": "tsx packages/db/prisma/seed.ts",
+    "seed:demo": "tsx apps/worker/src/scripts/seedDemoCatalog.ts",
+    "import:archive": "tsx apps/worker/src/scripts/importArchive.ts"
   },
   "devDependencies": {
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   },
   "engines": {

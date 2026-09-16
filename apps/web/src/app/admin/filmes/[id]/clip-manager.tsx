@@ -19,13 +19,34 @@ type Clip = {
   endSeconds: number;
   status: string;
   errorMessage: string | null;
+  previewUrl: string | null;
   socialPosts: SocialPost[];
 };
 
-export default function ClipManager({ movieId, movieTitle, clips }: { movieId: string; movieTitle: string; clips: Clip[] }) {
+function defaultCaption(movieTitle: string, releaseYear: number | null): string {
+  return [
+    `${movieTitle}${releaseYear ? ` (${releaseYear})` : ""}`,
+    "",
+    "🎬 Assista o filme completo agora — link na bio!",
+    "",
+    "#cinema #filmesclassicos #cinecuts",
+  ].join("\n");
+}
+
+export default function ClipManager({
+  movieId,
+  movieTitle,
+  releaseYear,
+  clips,
+}: {
+  movieId: string;
+  movieTitle: string;
+  releaseYear: number | null;
+  clips: Clip[];
+}) {
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [caption, setCaption] = useState(`Assista "${movieTitle}" completo — link na bio!`);
+  const [caption, setCaption] = useState(defaultCaption(movieTitle, releaseYear));
   const [start, setStart] = useState("0");
   const [end, setEnd] = useState("30");
   const [loading, setLoading] = useState(false);
@@ -114,12 +135,13 @@ export default function ClipManager({ movieId, movieTitle, clips }: { movieId: s
             className="bg-white/10 rounded-md px-3 py-2 w-24"
           />
         </div>
-        <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-          <label className="text-xs text-white/50">Legenda</label>
-          <input
+        <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
+          <label className="text-xs text-white/50">Legenda do Instagram</label>
+          <textarea
+            rows={3}
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            className="bg-white/10 rounded-md px-3 py-2"
+            className="bg-white/10 rounded-md px-3 py-2 text-sm"
           />
         </div>
         <button type="submit" disabled={loading} className="bg-brand rounded-md px-4 py-2 font-semibold">
@@ -149,6 +171,15 @@ export default function ClipManager({ movieId, movieTitle, clips }: { movieId: s
               </button>
             </div>
 
+            {clip.previewUrl && (
+              <video
+                controls
+                preload="metadata"
+                src={clip.previewUrl}
+                className="mt-3 rounded-md bg-black w-full max-w-xs"
+              />
+            )}
+
             {clip.status === "READY" && (
               <form
                 action={(formData) => schedulePost(clip.id, formData)}
@@ -158,9 +189,14 @@ export default function ClipManager({ movieId, movieTitle, clips }: { movieId: s
                   <label className="text-xs text-white/50">Agendar para</label>
                   <input type="datetime-local" name="scheduledFor" required className="bg-white/10 rounded-md px-3 py-2" />
                 </div>
-                <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+                <div className="flex flex-col gap-1 flex-1 min-w-[260px]">
                   <label className="text-xs text-white/50">Legenda do post</label>
-                  <input name="caption" defaultValue={clip.caption} className="bg-white/10 rounded-md px-3 py-2" />
+                  <textarea
+                    name="caption"
+                    rows={3}
+                    defaultValue={clip.caption}
+                    className="bg-white/10 rounded-md px-3 py-2 text-sm"
+                  />
                 </div>
                 <button type="submit" className="bg-brand rounded-md px-4 py-2 font-semibold text-sm">
                   Agendar no Instagram

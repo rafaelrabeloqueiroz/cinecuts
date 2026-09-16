@@ -80,10 +80,16 @@ model Movie {
   title             String
   slug              String      @unique
   description       String
-  releaseYear        Int?
+  releaseYear       Int?
   publicDomainNotes String
   posterStorageKey  String?
-  videoStorageKey   String
+  videoStorageKey   String?
+  /// Quando o arquivo não está no nosso storage e sim numa fonte externa
+  /// (ex.: Internet Archive), guardamos a URL direta em vez da chave.
+  externalVideoUrl  String?
+  externalPosterUrl String?
+  /// Identificador do item no Internet Archive, usado para deduplicar imports.
+  archiveIdentifier String?     @unique
   durationSeconds   Int
   status            MovieStatus @default(DRAFT)
   clips             Clip[]
